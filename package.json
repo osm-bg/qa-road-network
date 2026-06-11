@@ -7,7 +7,7 @@
     "google-polyline": "^1.0.3"
   },
   "scripts": {
-    "build": "node build.js",
+    "build": "node build-roads.js && node build-railroads.js && node build-rivers.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

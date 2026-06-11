@@ -1,29 +1,18 @@
-import queryOverpass from '@derhuerst/query-overpass';
+import { fetch_data } from './osm.js';
 import { encode } from 'google-polyline';
 import fs from 'fs';
-
-function fetch_network() {
-    const query = '[out:json][timeout:25];'
-        + '('
-        + 'relation["type"="route"]["route"="road"]["network"="bg:motorway"];'
-        + 'relation["type"="route"]["route"="road"]["network"="bg:national"];'
-        + 'relation["type"="route"]["route"="road"]["network"="bg:municipal"];'
-        + ');'
-        + 'out body geom;'
-    return queryOverpass(query);
-}
+const output_path = 'output/rivers/';
 
 function preprocess_data(elements) {
     const routes = new Map();
     for(const osm_route of elements) {
-        if(!osm_route.tags.ref) {
+        if(!osm_route.tags.name) {
             continue;
         }
-        const ref = isNaN(osm_route.tags.ref) ? (osm_route.tags.ref ? osm_route.tags.ref : '') : Number(osm_route.tags.ref);
-        const route = routes.get(ref) || {
-            ref,
-            type: osm_route.tags.network.split(':')[1],
-            name: osm_route.tags.name || null,
+        const name = osm_route.tags.name;
+        const route = routes.get(name) || {
+            name,
+            type: osm_route.tags.waterway,
             lines: [],
         };
 
@@ -53,7 +42,7 @@ function preprocess_data(elements) {
             }
         }
 
-        routes.set(ref, route);
+        routes.set(name, route);
     }
     return routes;
 }
@@ -68,19 +57,18 @@ function convert_lines_to_polylines(routes) {
             
 
 function save_data(routes) {
-    if(!fs.existsSync('output')) {
-        fs.mkdirSync('output');
+    if(!fs.existsSync(output_path)) {
+        fs.mkdirSync(output_path);
     }
 
     for(const route of routes.values()) {
-        const filename = `output/route-${route.ref.toString().replace(/\s+/g, '_')}.json`;
+        const filename = `${output_path}river-${route.name.replace(/\//g, '_')}.json`;
         fs.writeFileSync(filename, JSON.stringify(route, null, 2));
     }
 
     {
         const values = Array.from(routes.values());
         const short_data = values.map(r => ({
-            ref: r.ref,
             type: r.type,
             name: r.name
         }));
@@ -89,23 +77,27 @@ function save_data(routes) {
             date: (new Date()).toISOString(),
             data: short_data
         };
-        fs.writeFileSync('output/routes.json', JSON.stringify(to_save, null, 2));
+        fs.writeFileSync(`${output_path}rivers.json`, JSON.stringify(to_save, null, 2));
     }
 
     {
         const values = Array.from(routes.values());
-        const rows = ['export const routes_map = new Map();'];
+        const rows = ['export const rivers_map = new Map();'];
         for(const route of values) {
-            rows.push(`routes_map.set('${route.ref}', new URL('route-${route.ref.toString().replace(/\s+/g, '_')}.json', import.meta.url));`);
+            rows.push(`rivers_map.set('${route.name}', new URL('river-${route.name.replace(/\//g, '_')}.json', import.meta.url));`);
         }
-        fs.writeFileSync('output/routes-map.js', rows.join('\n') + '\n');
+        fs.writeFileSync(`${output_path}rivers-map.js`, rows.join('\n') + '\n');
     }
     console.log('Data saved successfully.');
 }
 
 function run() {
     console.time('build');
-    fetch_network()
+    fetch_data([
+        [
+            { key: 'type', value: 'waterway' }
+        ]
+    ])
     .then(preprocess_data)
     .then(convert_lines_to_polylines)
     .then(save_data)
